@@ -1,0 +1,24 @@
+{
+  "name": "health-check",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A weekly dependency, runtime and credential health check for npm projects, filed as one GitHub issue.",
+  "license": "MIT",
+  "bin": {
+    "health-check": "bin/init.mjs"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6",
+    "vitest": "^4.1.11",
+    "yaml": "^2.9.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

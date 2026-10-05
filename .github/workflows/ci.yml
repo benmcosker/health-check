@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      # Installed from the lockfile, which is the only install that checks the
+      # tree is one npm can actually build.
+      - run: npm ci
+
+      - run: npm run format:check
+
+      - run: npm test
+
+  # The unit tests cover the logic; they cannot cover action.yml, which is
+  # YAML that only GitHub can run. So run it, on every push, against this
+  # repository, in dry-run so that no issue is opened or closed. If the action
+  # stops being runnable - a bad expression, a renamed input - this is where
+  # that shows, and not on somebody else's Monday.
+  action:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: ./
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          dry-run: "true"

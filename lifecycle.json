@@ -1,0 +1,10 @@
+{
+  "runtimes": [
+    { "product": "nodejs", "cycle": "22", "used": "CI and the action" }
+  ],
+  "pinned": [],
+  "unreachable": [],
+  "warnWithinDays": 180,
+  "credentials": [],
+  "versions": ["vitest"]
+}

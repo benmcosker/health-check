@@ -1,0 +1,26 @@
+name: Health watchdog
+
+# The weekly check cannot report its own absence. A scheduled workflow GitHub
+# drops leaves no run, no annotation and no red tick, so this looks for the
+# silence from outside, daily, and files an issue when it finds one.
+#
+# It runs on the same scheduler as the thing it watches, so it is not a
+# guarantee - daily rather than weekly only makes it seven chances instead of
+# one.
+on:
+  schedule:
+    - cron: "{{WATCHDOG_CRON}}"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  issues: write
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {{SOURCE}}/watchdog@{{REF}}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: health.yml

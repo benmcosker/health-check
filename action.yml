@@ -1,0 +1,159 @@
+name: Weekly health check
+description: >-
+  Checks an npm project for advisories, packages falling behind, runtimes
+  nearing end of life and overdue secret rotations, and keeps the result in one
+  GitHub issue.
+
+# A composite action rather than a reusable workflow, on purpose. A reusable
+# workflow cannot learn which version of itself it is running, so it cannot
+# fetch its own scripts at a matching ref; this ships them beside action.yml and
+# `github.action_path` points at exactly the version the caller pinned. It also
+# lets a project run its own steps first - a schema-drift check, say - which a
+# workflow_call could only offer through a pile of inputs.
+#
+# The caller owns checkout, Node and `npm ci`, and the schedule. Schedules
+# cannot live in anything that is called.
+
+inputs:
+  github-token:
+    description: >-
+      Token that may write issues. `secrets.GITHUB_TOKEN` is enough, given
+      `issues: write` on the job.
+    required: true
+  lifecycle-file:
+    description: >-
+      The project's config, relative to the working directory. Leave empty to
+      use lifecycle.json if it exists and to run without one if it does not.
+      A path that is given and missing is an error.
+    required: false
+    default: ""
+  issue-title:
+    description: >-
+      Title of the one issue this keeps. It is matched by exact title, so
+      changing it opens a new issue rather than renaming the old one.
+    required: false
+    default: "Weekly health"
+  issue-label:
+    description: Label put on that issue, and used to find it again.
+    required: false
+    default: "health"
+  drift:
+    description: >-
+      "true" or "false" if the project has its own schema-drift check and has
+      already run it; empty if it has none, in which case the report says
+      nothing about schemas.
+    required: false
+    default: ""
+  drift-note:
+    description: One sentence on what drift means for this project, shown when drift is true.
+    required: false
+    default: ""
+  working-directory:
+    description: The project directory, when it is not the repository root.
+    required: false
+    default: "."
+  dry-run:
+    description: >-
+      "true" to write the report to the job summary and touch no issues. The
+      way to try this on a project without opening anything.
+    required: false
+    default: "false"
+
+outputs:
+  needed:
+    description: '"true" if there is anything a person should act on.'
+    value: ${{ steps.report.outputs.needed }}
+  body:
+    description: The report, as Markdown.
+    value: ${{ steps.report.outputs.body }}
+
+runs:
+  using: composite
+  steps:
+    # All three exit non-zero when they have something to say, which is the
+    # normal case rather than a failure - the report is the output. A failed
+    # run is told apart from a clean one by what it wrote, in the next step,
+    # and not by the exit code here.
+    - name: Collect advisories and outdated packages
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        mkdir -p "$RUNNER_TEMP/health"
+        npm audit --json > "$RUNNER_TEMP/health/audit.json" || true
+        npm audit --omit=dev --json > "$RUNNER_TEMP/health/audit-prod.json" || true
+        npm outdated --json > "$RUNNER_TEMP/health/outdated.json" || true
+
+    - name: Write the report
+      id: report
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        HEALTH_LIFECYCLE: ${{ inputs.lifecycle-file }}
+        HEALTH_AUDIT: ${{ runner.temp }}/health/audit.json
+        HEALTH_AUDIT_PROD: ${{ runner.temp }}/health/audit-prod.json
+        HEALTH_OUTDATED: ${{ runner.temp }}/health/outdated.json
+        DRIFT: ${{ inputs.drift }}
+        DRIFT_NOTE: ${{ inputs.drift-note }}
+      run: node "${{ github.action_path }}/src/health-check.mjs"
+
+    - name: Put the report in the job summary
+      shell: bash
+      env:
+        NEEDED: ${{ steps.report.outputs.needed }}
+        BODY: ${{ steps.report.outputs.body }}
+      run: |
+        if [ "$NEEDED" = "true" ]; then
+          printf '%s\n' "$BODY" >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "Nothing to report this week." >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    # One issue, reopened and rewritten each week rather than a new one each
+    # Monday - a pile of stale duplicates is how people learn to ignore a
+    # label. Closed automatically when there is nothing left to say, because an
+    # open issue reading "all clear" is the same noise more politely.
+    - name: File or close the report
+      if: inputs.dry-run != 'true'
+      uses: actions/github-script@v9
+      env:
+        NEEDED: ${{ steps.report.outputs.needed }}
+        BODY: ${{ steps.report.outputs.body }}
+        TITLE: ${{ inputs.issue-title }}
+        LABEL: ${{ inputs.issue-label }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const title = process.env.TITLE;
+          const label = process.env.LABEL;
+          const { owner, repo } = context.repo;
+
+          const existing = (await github.rest.issues.listForRepo({
+            owner, repo, state: "open", labels: label, per_page: 20,
+          })).data.find((i) => i.title === title);
+
+          if (process.env.NEEDED !== "true") {
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existing.number,
+                body: "Clear this week. Closing; it will reopen if anything shows up.",
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: existing.number, state: "closed",
+              });
+            }
+            core.info("Nothing to report.");
+            return;
+          }
+
+          const body = process.env.BODY;
+          if (existing) {
+            await github.rest.issues.update({
+              owner, repo, issue_number: existing.number, body,
+            });
+            core.info(`Updated #${existing.number}`);
+          } else {
+            const made = await github.rest.issues.create({
+              owner, repo, title, body, labels: [label],
+            });
+            core.info(`Opened #${made.data.number}`);
+          }

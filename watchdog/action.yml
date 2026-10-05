@@ -1,0 +1,95 @@
+name: Health watchdog
+description: >-
+  Files an issue when the weekly health check has not run, which a dropped
+  schedule would otherwise leave as no run, no annotation and no red tick.
+
+# The weekly check cannot report its own absence, so this looks for it from
+# outside. It needs no checkout, no install and no packages - it watches a job
+# that needs all three, so it deliberately needs none of them.
+#
+# It runs on the same scheduler as the thing it watches. That is a correlated
+# failure no setting inside GitHub removes; running it daily instead of weekly
+# only makes it seven chances rather than one.
+
+inputs:
+  github-token:
+    description: >-
+      Token with `actions: read` and `issues: write`. `secrets.GITHUB_TOKEN` is
+      enough, given those permissions on the job.
+    required: true
+  workflow:
+    description: The workflow file to watch.
+    required: false
+    default: "health.yml"
+  max-age-days:
+    description: >-
+      Days since the last successful run before this speaks up. A week plus a
+      day: the check runs weekly, and a late start has been as much as eight
+      hours.
+    required: false
+    default: "8"
+  issue-title:
+    description: Title of the one issue this keeps. Matched by exact title.
+    required: false
+    default: "Weekly health has not run"
+  issue-label:
+    description: Label put on that issue, and used to find it again.
+    required: false
+    default: "health"
+
+runs:
+  using: composite
+  steps:
+    - name: Look for a recent successful run
+      id: check
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        WATCH_WORKFLOW: ${{ inputs.workflow }}
+        MAX_AGE_DAYS: ${{ inputs.max-age-days }}
+      run: node "${{ github.action_path }}/../src/watchdog-check.mjs"
+
+    - name: File or close the notice
+      uses: actions/github-script@v9
+      env:
+        STALE: ${{ steps.check.outputs.stale }}
+        BODY: ${{ steps.check.outputs.body }}
+        TITLE: ${{ inputs.issue-title }}
+        LABEL: ${{ inputs.issue-label }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const title = process.env.TITLE;
+          const label = process.env.LABEL;
+          const { owner, repo } = context.repo;
+
+          const existing = (await github.rest.issues.listForRepo({
+            owner, repo, state: "open", labels: label, per_page: 20,
+          })).data.find((i) => i.title === title);
+
+          if (process.env.STALE !== "true") {
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existing.number,
+                body: "The weekly check has run since. Closing.",
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: existing.number, state: "closed",
+              });
+            }
+            core.info("The weekly check has run recently.");
+            return;
+          }
+
+          const body = process.env.BODY;
+          if (existing) {
+            await github.rest.issues.update({
+              owner, repo, issue_number: existing.number, body,
+            });
+            core.info(`Updated #${existing.number}`);
+          } else {
+            const made = await github.rest.issues.create({
+              owner, repo, title, body, labels: [label],
+            });
+            core.info(`Opened #${made.data.number}`);
+          }

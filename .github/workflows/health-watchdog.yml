@@ -1,0 +1,23 @@
+name: Health watchdog
+
+on:
+  schedule:
+    - cron: "17 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  issues: write
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    steps:
+      # A local action needs the repository on disk; the check itself needs
+      # nothing else.
+      - uses: actions/checkout@v7
+
+      - uses: ./watchdog
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: health.yml

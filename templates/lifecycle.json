@@ -1,0 +1,18 @@
+{
+  "$comment": [
+    "What the weekly health check watches that no package manager knows about.",
+    "runtimes:    products and release cycles from endoflife.date, e.g. nodejs 22.",
+    "credentials: secrets you rotate by hand. Record rotatedOn (YYYY-MM-DD) when you do;",
+    "             null means nobody has written it down yet.",
+    "unreachable: advisories you have checked by hand cannot be reached from a request,",
+    "             each with a reason and a date. They are still reported, just not counted.",
+    "pinned:      packages deliberately held to a release line (e.g. @types/node).",
+    "versions:    packages whose declared version should be listed in the report."
+  ],
+  "runtimes": [],
+  "pinned": [],
+  "unreachable": [],
+  "warnWithinDays": 180,
+  "credentials": [],
+  "versions": []
+}

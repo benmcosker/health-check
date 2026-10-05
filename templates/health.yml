@@ -1,0 +1,38 @@
+name: Weekly health
+
+# What time breaks: an advisory published against a dependency nobody touched, a
+# package quietly several majors behind, a runtime nearing end of life, a secret
+# overdue for rotation. CI answers "did this commit break anything"; nothing in
+# it answers "did the world move while nobody was looking".
+on:
+  schedule:
+    # Mondays. The minute is off the round numbers on purpose: GitHub queues
+    # every repository's schedules together and drops what it cannot reach, and
+    # the top of the hour is where everybody else's cron is. It may still run
+    # hours late; that is how GitHub schedules, and a weekly report can wait.
+    - cron: "{{CRON}}"
+  workflow_dispatch:
+
+# Enough to file the report and no more.
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: {{NODE}}
+          cache: npm
+
+      # The check compares what is installed with what is published, so it
+      # refuses to run without an install rather than report a clean week.
+      - run: npm ci
+
+      - uses: {{SOURCE}}@{{REF}}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}

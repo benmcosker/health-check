@@ -1,0 +1,5 @@
+node_modules
+package-lock.json
+# Not valid YAML until init renders the {{placeholders}}.
+templates/health.yml
+templates/health-watchdog.yml
